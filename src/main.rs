@@ -24,6 +24,14 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
+    /// Enable debug output with detailed statistics
+    #[arg(short = 'd', long)]
+    debug: bool,
+
+    /// Suppress results output to terminal
+    #[arg(short, long)]
+    silent: bool,
+
     /// Number of concurrent requests (auto-calculated based on input if not specified, minimum 500)
     #[arg(short, long)]
     concurrency: Option<usize>,
@@ -144,6 +152,7 @@ async fn query_shodan(client: &Client, ip: &str, verbose: bool) -> Result<Shodan
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let args = Args::parse();
+    let start_time = std::time::Instant::now();
 
     let num_hosts = {
         let file = File::open(&args.input)?;
@@ -162,6 +171,10 @@ async fn main() -> io::Result<()> {
 
     println!("Input has {} hosts, using concurrency: {}", num_hosts, concurrency);
 
+    if args.debug {
+        println!("Debug mode enabled - showing detailed statistics");
+    }
+
     configure_system(args.verbose)?;
 
     let client = Client::builder()
@@ -175,51 +188,100 @@ async fn main() -> io::Result<()> {
     let mut tasks = vec![];
     let semaphore = Arc::new(Semaphore::new(concurrency));
 
+    let mut processed_hosts = 0;
+    let mut successful_queries = 0;
+    let mut failed_queries = 0;
+
     for line in reader.lines() {
         let line = line?;
         let host = line.trim().to_string();
         if host.is_empty() {
             continue;
         }
+        processed_hosts += 1;
+
         let client_clone = Arc::clone(&client);
         let semaphore_clone = Arc::clone(&semaphore);
         let verbose = args.verbose;
+        let debug = args.debug;
+
         let task = task::spawn(async move {
             let _permit = semaphore_clone.acquire().await.unwrap();
             let ips = resolve_host(&host).await;
             let mut results = vec![];
+            let mut success_count = 0;
+            let mut fail_count = 0;
+
             for ip in ips {
                 match query_shodan(&client_clone, &ip, verbose).await {
                     Ok(result) => {
-                        results.push((ip, result.ports));
+                        let ports_count = result.ports.len();
+                        results.push((ip.clone(), result.ports));
+                        success_count += 1;
+                        if debug {
+                            println!("✓ {}: {} ports found", ip, ports_count);
+                        }
                     }
                     Err(e) => {
+                        fail_count += 1;
                         if verbose {
-                            eprintln!("Error querying {}: {}", ip, e);
+                            eprintln!("✗ Error querying {}: {}", ip, e);
                         }
                     }
                 }
             }
-            (host, results)
+
+            if debug && (success_count > 0 || fail_count > 0) {
+                println!("Host {}: {} success, {} failed", host, success_count, fail_count);
+            }
+
+            (host, results, success_count, fail_count)
         });
         tasks.push(task);
     }
 
     let mut all_results = HashMap::new();
     for task in tasks {
-        if let Ok((host, results)) = task.await {
+        if let Ok((host, results, success_count, fail_count)) = task.await {
             all_results.insert(host, results);
+            successful_queries += success_count;
+            failed_queries += fail_count;
         }
     }
 
+    let mut total_ports = 0;
     let mut output_file = File::create(&args.output)?;
-    for (host, ip_ports) in all_results {
-        for (ip, ports) in ip_ports {
-            for port in &ports {
-                writeln!(output_file, "{}:{}", host, port)?;
+    for (host, ip_ports) in &all_results {
+        for (_ip, ports) in ip_ports {
+            for port in ports {
+                let result_line = format!("{}:{}", host, port);
+                writeln!(output_file, "{}", result_line)?;
+                if !args.silent {
+                    println!("{}", result_line);
+                }
+                total_ports += 1;
             }
         }
     }
 
+    let elapsed = start_time.elapsed();
+
+    if args.debug || args.verbose {
+        println!("\n--- Debug Statistics ---");
+        println!("Total hosts processed: {}", processed_hosts);
+        println!("Successful queries: {}", successful_queries);
+        println!("Failed queries: {}", failed_queries);
+        println!("Total ports found: {}", total_ports);
+        println!("Scan duration: {:.2}s", elapsed.as_secs_f64());
+        println!("Average ports per host: {:.2}", if processed_hosts > 0 { total_ports as f64 / processed_hosts as f64 } else { 0.0 });
+        println!("Query success rate: {:.1}%", if (successful_queries + failed_queries) > 0 { (successful_queries as f64 / (successful_queries + failed_queries) as f64) * 100.0 } else { 0.0 });
+    }
+
+    if !args.silent {
+        println!("\nResults saved to: {}", args.output);
+        println!("Found {} open ports across {} hosts in {:.2}s", total_ports, processed_hosts, elapsed.as_secs_f64());
+    }
+
     Ok(())
 }
+

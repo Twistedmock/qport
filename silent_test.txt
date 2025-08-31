@@ -1,0 +1,17 @@
+example.com:80
+example.com:443
+example.com:80
+example.com:443
+example.com:80
+example.com:443
+example.com:80
+example.com:443
+example.com:80
+example.com:443
+example.com:80
+example.com:443
+scanme.nmap.org:22
+scanme.nmap.org:80
+scanme.nmap.org:123
+scanme.nmap.org:9929
+scanme.nmap.org:31337
