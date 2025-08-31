@@ -24,7 +24,7 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Number of concurrent requests (auto-calculated based on input if not specified)
+    /// Number of concurrent requests (auto-calculated based on input if not specified, minimum 500)
     #[arg(short, long)]
     concurrency: Option<usize>,
 }
@@ -151,12 +151,12 @@ async fn main() -> io::Result<()> {
         reader.lines().count()
     };
 
-    let calculated_c = ((num_hosts as f64 * 0.6 / 60.0).ceil() as usize).max(1).min(10000);
-    let concurrency = args.concurrency.unwrap_or(calculated_c).min(10000);
+    let calculated_c = ((num_hosts as f64 * 0.6 / 60.0).ceil() as usize).max(500);
+    let concurrency = args.concurrency.unwrap_or(calculated_c).max(500);
 
     if let Some(c) = args.concurrency {
-        if c > 10000 && args.verbose {
-            eprintln!("Warning: Concurrency capped at 10000.");
+        if c < 500 && args.verbose {
+            eprintln!("Warning: Concurrency increased to minimum of 500.");
         }
     }
 
