@@ -1,188 +1,111 @@
 # qport
 
-A fast, passive port scanner using Shodan InternetDB API. This tool efficiently scans large lists of hosts to discover open ports without active scanning, making it ideal for reconnaissance and security assessments.
+Fast passive port scanner using Shodan InternetDB with stealth features and optimized performance.
 
 ## Features
 
-- 🚀 **High Performance**: Asynchronous scanning with configurable concurrency (minimum 500)
-- 🔍 **Passive Scanning**: Uses Shodan InternetDB API for non-intrusive port discovery
-- 📊 **Smart Concurrency**: Automatically calculates optimal concurrency based on target list size
-- 🛠️ **Flexible Input**: Supports host lists in text files (one host per line)
-- 📝 **Structured Output**: Clean output format with host:port pairs
-- 🔧 **System Optimization**: Automatically configures system limits for optimal performance
-- 📈 **Progress Tracking**: Real-time status updates during scanning
-
-## Requirements
-
-- Rust 1.70+ (for building from source)
-- Internet connection (for Shodan API access)
-- Linux or macOS (system optimization features)
+- **Sequential Processing**: No concurrency to avoid detection and rate limiting
+- **High Performance**: 500 requests per second with 1-3ms random delays
+- **Stealth Mode**: 100 rotating browser user agents to avoid fingerprinting
+- **Simple CLI**: Intuitive command-line interface with auto-generated output files
+- **Unique Port Filtering**: Optional filtering to exclude common ports (80, 443)
+- **Cross-Platform**: Works on Linux, macOS, and Windows
 
 ## Installation
 
-### Option 1: Build from Source
-
+### From Source
 ```bash
-# Clone the repository
 git clone https://github.com/Twistedmock/qport.git
 cd qport
-
-# Build the project
 cargo build --release
-
-# The binary will be available at target/release/qport
 ```
 
-### Option 2: Direct Download
-
-Download the latest release from the [GitHub Releases](https://github.com/Twistedmock/qport/releases) page.
+The binary will be available at `target/release/qport`
 
 ## Usage
 
 ### Basic Usage
-
 ```bash
 # Scan hosts from a file
+./qport -i hosts.txt
+
+# Scan with custom output file
 ./qport -i hosts.txt -o results.txt
 
-# Scan with custom concurrency
-./qport -i hosts.txt -o results.txt -c 1000
+# Generate unique results excluding ports 80,443
+./qport -i hosts.txt -u unique_ports.txt
 
-# Enable verbose output
-./qport -i hosts.txt -o results.txt -v
+# Verbose output with debug information
+./qport -i hosts.txt -v -d
 ```
 
 ### Command Line Options
 
-```
-Usage: qport [OPTIONS] --input <INPUT> --output <OUTPUT>
+- `-i, --input <FILE>`: Input file with list of hosts (one per line)
+- `-o, --output <FILE>`: Output file for results (optional, auto-generated if not provided)
+- `-u, --uniq <FILE>`: Generate unique output file excluding common ports 80,443
+- `-v, --verbose`: Enable verbose output
+- `-d, --debug`: Enable debug output with detailed statistics
+- `-s, --silent`: Suppress results output to terminal
 
-Options:
-  -i, --input <INPUT>        Input file with list of hosts (one per line)
-  -o, --output <OUTPUT>      Output file for results
-  -c, --concurrency <CONCURRENCY>
-                              Number of concurrent requests (auto-calculated based on input if not specified, minimum 500)
-  -v, --verbose              Enable verbose output
-  -h, --help                 Print help
-  -V, --version              Print version
-```
-
-### Input File Format
+### Input Format
 
 Create a text file with one host per line:
-
 ```
 example.com
 192.168.1.1
-scanme.nmap.org
 subdomain.example.org
+10.0.0.1
 ```
 
 ### Output Format
 
-Results are saved in the format `host:port`:
-
+Results are saved in `host:port` format:
 ```
+example.com:22
 example.com:80
 example.com:443
+192.168.1.1:21
 192.168.1.1:22
-192.168.1.1:80
-scanme.nmap.org:22
-scanme.nmap.org:80
 ```
 
-## Concurrency
+## Performance
 
-qport automatically calculates optimal concurrency based on your target list:
+- **Speed**: ~500 requests per second
+- **Stealth**: 100 different browser user agents rotated per request
+- **Efficiency**: Sequential processing prevents rate limiting
+- **System Optimization**: Automatic file descriptor limit configuration
 
-- **Formula**: `max(hosts × 0.6 ÷ 60, 500)`
-- **Minimum**: 500 concurrent requests
-- **Maximum**: Calculated based on target list size (no hard cap)
+## Technical Details
 
-### Examples:
-- 10,000 hosts → ~500 concurrency
-- 100,000 hosts → ~1,000 concurrency
-- 1,000,000 hosts → ~10,000 concurrency
+- **Language**: Rust 2021 Edition
+- **HTTP Client**: reqwest with custom headers and timeouts
+- **Async Runtime**: tokio for efficient I/O operations
+- **CLI Framework**: clap 4.0 with derive macros
+- **Data Source**: Shodan InternetDB (free, no API key required)
 
-You can override the auto-calculated value with the `-c` flag, but it will be increased to the minimum of 500 if lower.
+## Why qport?
 
-## System Requirements
+Unlike aggressive concurrent scanners that get blocked, qport uses a "portmap-like" approach:
+- Sequential requests instead of parallel flooding
+- Realistic browser user agents instead of tool fingerprints
+- Random delays to mimic human browsing patterns
+- Automatic retry logic with exponential backoff
 
-### Linux
-The tool automatically configures optimal system settings:
-- File descriptor limit: 1,048,576
-- TCP settings optimized for high concurrency
+This approach achieves high success rates while maintaining reasonable speed.
 
-### macOS
-File descriptor limits are optimized automatically. For maximum performance, you may need to run:
-```bash
-sudo sysctl -w kern.maxfiles=2097152
-sudo sysctl -w kern.maxfilesperproc=1048576
-```
+## License
 
-## API Rate Limits
-
-qport uses the free Shodan InternetDB API, which has rate limits. For large-scale scanning:
-- Space out your scans to avoid hitting rate limits
-- Consider using multiple IP addresses if needed
-- The tool handles API errors gracefully and continues scanning
-
-## Examples
-
-### Basic Scan
-```bash
-./qport -i targets.txt -o open_ports.txt
-```
-
-### Large-Scale Scan with Custom Concurrency
-```bash
-./qport -i large_target_list.txt -o results.txt -c 2000 -v
-```
-
-### Quick Test
-```bash
-echo "scanme.nmap.org" > test.txt
-./qport -i test.txt -o test_results.txt -v
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"Failed to set file descriptor limit"**
-   - On Linux: Run with `sudo` or adjust system limits
-   - On macOS: The tool will still work but with reduced performance
-
-2. **High memory usage**
-   - Reduce concurrency with `-c` flag
-   - Process smaller batches of targets
-
-3. **Slow scanning**
-   - Check your internet connection
-   - You may be hitting Shodan API rate limits
-   - Try reducing concurrency
-
-### Verbose Mode
-
-Use the `-v` flag for detailed output including:
-- API query URLs
-- Error messages for individual hosts
-- System configuration status
-- Concurrency warnings
+MIT License - see LICENSE file for details.
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and test thoroughly
-4. Commit your changes: `git commit -am 'Add new feature'`
-5. Push to the branch: `git push origin feature-name`
-6. Submit a pull request
-
-## License
-
-This project is open source. Please check the license file for details.
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
 ## Disclaimer
 
-This tool is for educational and security research purposes only. Users are responsible for complying with applicable laws and regulations when using this tool. The authors are not responsible for any misuse or damage caused by this software.
+This tool is for educational and authorized security testing purposes only. Always ensure you have permission to scan target systems.
