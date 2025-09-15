@@ -6,6 +6,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::Duration;
 use rand::Rng;
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Parser)]
 #[command(name = "qport")]
@@ -408,8 +409,34 @@ async fn main() -> io::Result<()> {
     // Get the list of user agents for rotation
     let user_agents = get_user_agents();
 
+    // First pass: read all hosts and resolve to IPs to know total IP count for progress bar
     let file = File::open(&args.input)?;
     let reader = BufReader::new(file);
+    let mut hosts: Vec<String> = Vec::new();
+    for line in reader.lines() {
+        let l = line?;
+        let host = l.trim();
+        if !host.is_empty() { hosts.push(host.to_string()); }
+    }
+
+    let mut resolved_map: HashMap<String, Vec<String>> = HashMap::new();
+    let mut total_ips: u64 = 0;
+    for h in &hosts {
+        let ips = resolve_host(h).await;
+        total_ips += ips.len() as u64;
+        resolved_map.insert(h.clone(), ips);
+    }
+
+    // Progress bar setup
+    let pb = if !args.silent {
+        let pb = ProgressBar::new(total_ips.max(1));
+        pb.set_style(
+            ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} IPs scanned ({per_sec})")
+                .unwrap()
+                .progress_chars("##-"),
+        );
+        Some(pb)
+    } else { None };
 
     let mut processed_hosts = 0;
     let mut successful_queries = 0;
@@ -417,21 +444,14 @@ async fn main() -> io::Result<()> {
     let mut all_results = HashMap::new();
     let mut request_count = 0; // Counter for user agent rotation
 
-    // Sequential processing like portmap - no concurrency
-    for line in reader.lines() {
-        let line = line?;
-        let host = line.trim().to_string();
-        if host.is_empty() {
-            continue;
-        }
+    // Second pass: query per IP, updating the progress bar
+    for host in hosts {
         processed_hosts += 1;
-
         if args.debug {
             println!("Processing host {} ({}/{})", host, processed_hosts, num_hosts);
         }
 
-        // Resolve host to IPs
-        let ips = resolve_host(&host).await;
+        let ips = resolved_map.remove(&host).unwrap_or_default();
         let mut host_results = vec![];
         let mut host_success_count = 0;
         let mut host_fail_count = 0;
@@ -440,11 +460,11 @@ async fn main() -> io::Result<()> {
             // Ultra fast delay for ~500 requests per second (2ms average)
             let jitter = rand::thread_rng().gen_range(1..3);
             tokio::time::sleep(Duration::from_millis(jitter)).await;
-            
+
             // Rotate user agents for each request
             let user_agent = user_agents[request_count % user_agents.len()];
             request_count += 1;
-            
+
             match query_shodan(&client, &ip, user_agent, args.verbose).await {
                 Ok(result) => {
                     let ports_count = result.ports.len();
@@ -461,6 +481,8 @@ async fn main() -> io::Result<()> {
                     }
                 }
             }
+
+            if let Some(ref pb) = pb { pb.inc(1); }
         }
 
         all_results.insert(host.clone(), host_results);
@@ -471,6 +493,7 @@ async fn main() -> io::Result<()> {
             println!("Host {}: {} success, {} failed", host, host_success_count, host_fail_count);
         }
     }
+    if let Some(pb) = pb { pb.finish_with_message("done"); }
 
     let mut total_ports = 0;
     let mut unique_ports = 0;
