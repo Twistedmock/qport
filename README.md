@@ -8,6 +8,7 @@ Fast passive port scanner using Shodan InternetDB with stealth features and opti
 - **High Performance**: 500 requests per second with 1-3ms random delays
 - **Stealth Mode**: 100 rotating browser user agents to avoid fingerprinting
 - **Simple CLI**: Intuitive command-line interface with auto-generated output files
+- **Anew-style Output**: Appends only new unique lines to existing output files by default
 - **Unique Port Filtering**: Optional filtering to exclude common ports (80, 443)
 - **Cross-Platform**: Works on Linux, macOS, and Windows
 
@@ -35,6 +36,9 @@ The binary will be available at `target/release/qport`
 # Generate unique results excluding ports 80,443
 ./qport -i hosts.txt -u unique_ports.txt
 
+# Force overwrite instead of unique-append
+./qport -i hosts.txt -o results.txt --overwrite
+
 # Verbose output with debug information
 ./qport -i hosts.txt -v -d
 ```
@@ -43,7 +47,9 @@ The binary will be available at `target/release/qport`
 
 - `-i, --input <FILE>`: Input file with list of hosts (one per line)
 - `-o, --output <FILE>`: Output file for results (optional, auto-generated if not provided)
+- `-o, --output <FILE>`: Output file for results (optional, auto-generated if not provided)
 - `-u, --uniq <FILE>`: Generate unique output file excluding common ports 80,443
+- `--overwrite`: Overwrite output files instead of the default unique-append behavior
 - `-v, --verbose`: Enable verbose output
 - `-d, --debug`: Enable debug output with detailed statistics
 - `-s, --silent`: Suppress results output to terminal
@@ -68,6 +74,8 @@ example.com:443
 192.168.1.1:21
 192.168.1.1:22
 ```
+
+When an output file already exists, qport appends only lines that are not already present (unique by full line), similar to tomnomnom's "anew". This prevents duplicate results across multiple runs. Use `--overwrite` to write a fresh file instead.
 
 ## Performance
 

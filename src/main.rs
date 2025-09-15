@@ -1,8 +1,8 @@
 use clap::Parser;
 use reqwest::Client;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::fs::File;
+use std::collections::{HashMap, HashSet};
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::Duration;
 use rand::Rng;
@@ -34,6 +34,10 @@ struct Args {
     /// Generate unique output file excluding common ports 80,443
     #[arg(short = 'u', long, value_name = "UNIQUE_FILE")]
     uniq: Option<String>,
+
+    /// Overwrite output files instead of unique-append (anew-style)
+    #[arg(long)]
+    overwrite: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -278,6 +282,95 @@ async fn query_shodan(client: &Client, ip: &str, user_agent: &str, verbose: bool
     }
 }
 
+/// Open an output file with anew-style unique append semantics by default.
+/// Returns the writable file handle and a set of already-seen lines.
+fn open_output_with_anew(path: &str, overwrite: bool) -> io::Result<(File, HashSet<String>)> {
+    let mut seen: HashSet<String> = HashSet::new();
+
+    if overwrite {
+        // Truncate and start fresh
+        let file = File::create(path)?;
+        return Ok((file, seen));
+    }
+
+    // Try to read existing lines if the file exists
+    let p = std::path::Path::new(path);
+    if p.exists() {
+        if let Ok(existing) = File::open(p) {
+            let reader = BufReader::new(existing);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    seen.insert(l);
+                }
+            }
+        }
+        // Append to existing file
+        let file = OpenOptions::new().create(true).append(true).open(p)?;
+        Ok((file, seen))
+    } else {
+        // Create new file
+        let file = File::create(p)?;
+        Ok((file, seen))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn tmp_path(name: &str) -> String {
+        let mut p = std::env::temp_dir();
+        p.push(format!("qport_test_{}_{}.txt", name, std::process::id()));
+        p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn test_anew_append_unique() {
+        let path = tmp_path("anew");
+        // Seed file with two lines
+        {
+            let mut f = File::create(&path).expect("seed create");
+            writeln!(f, "a").unwrap();
+            writeln!(f, "b").unwrap();
+        }
+
+        // Open with anew behavior
+        let (mut f, mut seen) = open_output_with_anew(&path, false).expect("open anew");
+
+        // Attempt to add duplicate and new line
+        let l1 = "a".to_string();
+        let l2 = "c".to_string();
+        if seen.insert(l1.clone()) { writeln!(f, "{}", l1).unwrap(); }
+        if seen.insert(l2.clone()) { writeln!(f, "{}", l2).unwrap(); }
+        drop(f);
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut lines: Vec<_> = contents.lines().collect();
+        lines.sort();
+        assert_eq!(lines, vec!["a", "b", "c"]);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_overwrite_truncates() {
+        let path = tmp_path("overwrite");
+        {
+            let mut f = File::create(&path).expect("seed create");
+            writeln!(f, "old").unwrap();
+        }
+        let (mut f, mut seen) = open_output_with_anew(&path, true).expect("open overwrite");
+        let l = "new".to_string();
+        if seen.insert(l.clone()) { writeln!(f, "{}", l).unwrap(); }
+        drop(f);
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.trim(), "new");
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let args = Args::parse();
@@ -381,28 +474,37 @@ async fn main() -> io::Result<()> {
 
     let mut total_ports = 0;
     let mut unique_ports = 0;
-    let mut output_file = File::create(&output_filename)?;
-    let mut unique_output_file = if let Some(unique_filename) = &args.uniq {
-        Some(File::create(unique_filename)?)
+
+    // Main output file with anew-style behavior
+    let (mut output_file, mut seen_main) = open_output_with_anew(&output_filename, args.overwrite)?;
+
+    // Optional unique file (excluding 80,443) with same behavior
+    let (mut unique_output_file, mut seen_uniq) = if let Some(unique_filename) = &args.uniq {
+        let (f, s) = open_output_with_anew(unique_filename, args.overwrite)?;
+        (Some(f), Some(s))
     } else {
-        None
+        (None, None)
     };
 
     for (host, ip_ports) in &all_results {
         for (_ip, ports) in ip_ports {
             for port in ports {
                 let result_line = format!("{}:{}", host, port);
-                writeln!(output_file, "{}", result_line)?;
+                if seen_main.insert(result_line.clone()) {
+                    writeln!(output_file, "{}", result_line)?;
+                }
                 if !args.silent {
                     println!("{}", result_line);
                 }
                 total_ports += 1;
 
                 // Write to unique output file if enabled and port is not 80 or 443
-                if let Some(ref mut unique_file) = unique_output_file {
+                if let (Some(ref mut unique_file), Some(ref mut seen_u)) = (&mut unique_output_file, &mut seen_uniq) {
                     if *port != 80 && *port != 443 {
-                        writeln!(unique_file, "{}", result_line)?;
-                        unique_ports += 1;
+                        if seen_u.insert(result_line.clone()) {
+                            writeln!(unique_file, "{}", result_line)?;
+                            unique_ports += 1;
+                        }
                     }
                 }
             }
