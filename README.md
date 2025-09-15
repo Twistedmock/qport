@@ -5,7 +5,7 @@ Fast passive port scanner using Shodan InternetDB with stealth features and opti
 ## Features
 
 - **Sequential Processing**: No concurrency to avoid detection and rate limiting
-- **High Performance**: 500 requests per second with 1-3ms random delays
+- **High Performance**: Capped at ~300 requests per second (rate-limited)
 - **Stealth Mode**: 100 rotating browser user agents to avoid fingerprinting
 - **Simple CLI**: Intuitive command-line interface with auto-generated output files
 - **Anew-style Output**: Appends only new unique lines to existing output files by default
@@ -79,7 +79,7 @@ When an output file already exists, qport appends only lines that are not alread
 
 ## Performance
 
-- **Speed**: ~500 requests per second
+- **Speed**: Up to ~300 requests per second (capped)
 - **Stealth**: 100 different browser user agents rotated per request
 - **Efficiency**: Sequential processing prevents rate limiting
 - **System Optimization**: Automatic file descriptor limit configuration
