@@ -5,7 +5,7 @@ Fast passive port scanner using Shodan InternetDB with stealth features and opti
 ## Features
 
 - **Sequential Processing**: No concurrency to avoid detection and rate limiting
-- **High Performance**: Capped at ~300 requests per second (rate-limited)
+- **High Performance**: Configurable rate limiting (default: 300 requests per second) with concurrent processing
 - **Stealth Mode**: 100 rotating browser user agents to avoid fingerprinting
 - **Simple CLI**: Intuitive command-line interface with auto-generated output files
 - **Anew-style Output**: Appends only new unique lines to existing output files by default
@@ -39,6 +39,12 @@ The binary will be available at `target/release/qport`
 # Force overwrite instead of unique-append
 ./qport -i hosts.txt -o results.txt --overwrite
 
+# Custom request rate (500 requests per second)
+./qport -i hosts.txt -t 500
+
+# High concurrency with 100 workers and 1000 RPS
+./qport -i hosts.txt -t 1000 -c 100
+
 # Verbose output with debug information
 ./qport -i hosts.txt -v -d
 ```
@@ -53,6 +59,8 @@ The binary will be available at `target/release/qport`
 - `-v, --verbose`: Enable verbose output
 - `-d, --debug`: Enable debug output with detailed statistics
 - `-s, --silent`: Suppress results output to terminal
+- `-t, --rps <NUMBER>`: Maximum requests per second (default: 300)
+- `-c, --concurrency <NUMBER>`: Number of concurrent workers (default: 50)
 
 ### Input Format
 
@@ -79,7 +87,7 @@ When an output file already exists, qport appends only lines that are not alread
 
 ## Performance
 
-- **Speed**: Up to ~300 requests per second (capped)
+- **Speed**: Configurable rate limiting (default: 300 RPS, adjustable via -t flag)
 - **Stealth**: 100 different browser user agents rotated per request
 - **Efficiency**: Sequential processing prevents rate limiting
 - **System Optimization**: Automatic file descriptor limit configuration
