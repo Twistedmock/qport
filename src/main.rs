@@ -14,7 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 #[command(name = "qport")]
 #[command(about = "Fast passive port scanner using Shodan InternetDB")]
 struct Args {
-    /// Input file with list of hosts (one per line)
+    /// Input file with list of hosts - supports both IPs and subdomains (one per line)
     #[arg(short, long)]
     input: String,
 
