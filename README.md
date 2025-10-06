@@ -4,7 +4,6 @@ Fast passive port scanner using Shodan InternetDB with stealth features and opti
 
 ## Features
 
-- **Subdomain Support**: Accepts both IPs and subdomains as input - automatically resolves subdomains to IPs and preserves subdomain names in output
 - **Sequential Processing**: No concurrency to avoid detection and rate limiting
 - **High Performance**: Configurable rate limiting (default: 300 requests per second) with concurrent processing
 - **Stealth Mode**: 100 rotating browser user agents to avoid fingerprinting
@@ -52,7 +51,8 @@ The binary will be available at `target/release/qport`
 
 ### Command Line Options
 
-- `-i, --input <FILE>`: Input file with list of hosts - supports both IPs and subdomains (one per line)
+- `-i, --input <FILE>`: Input file with list of hosts (one per line)
+- `-o, --output <FILE>`: Output file for results (optional, auto-generated if not provided)
 - `-o, --output <FILE>`: Output file for results (optional, auto-generated if not provided)
 - `-u, --uniq <FILE>`: Generate unique output file excluding common ports 80,443
 - `--overwrite`: Overwrite output files instead of the default unique-append behavior
@@ -64,33 +64,24 @@ The binary will be available at `target/release/qport`
 
 ### Input Format
 
-Create a text file with one host per line. **Both IP addresses and subdomains are supported**:
+Create a text file with one host per line:
 ```
 example.com
 192.168.1.1
 subdomain.example.org
-api.service.com
 10.0.0.1
 ```
 
 ### Output Format
 
-Results are saved in `host:port` format. **Subdomains are preserved in the output** (not converted to IPs):
+Results are saved in `host:port` format:
 ```
 example.com:22
 example.com:80
 example.com:443
-subdomain.example.org:8080
-subdomain.example.org:8443
 192.168.1.1:21
 192.168.1.1:22
 ```
-
-**How subdomain scanning works:**
-1. Tool accepts subdomain as input (e.g., `api.example.com`)
-2. Resolves subdomain to IP address(es) internally
-3. Queries Shodan InternetDB with resolved IP(s) to find open ports
-4. Outputs results as `subdomain:port` (preserving the original subdomain name)
 
 When an output file already exists, qport appends only lines that are not already present (unique by full line), similar to tomnomnom's "anew". This prevents duplicate results across multiple runs. Use `--overwrite` to write a fresh file instead.
 

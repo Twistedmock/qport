@@ -14,7 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 #[command(name = "qport")]
 #[command(about = "Fast passive port scanner using Shodan InternetDB")]
 struct Args {
-    /// Input file with list of hosts - supports both IPs and subdomains (one per line)
+    /// Input file with list of hosts (one per line)
     #[arg(short, long)]
     input: String,
 
@@ -557,9 +557,9 @@ async fn main() -> io::Result<()> {
     };
 
     for (host, ip_ports) in &all_results {
-        for (ip, ports) in ip_ports {
+        for (_ip, ports) in ip_ports {
             for port in ports {
-                let result_line = format!("{}:{}", ip, port);
+                let result_line = format!("{}:{}", host, port);
                 if seen_main.insert(result_line.clone()) {
                     writeln!(output_file, "{}", result_line)?;
                 }
