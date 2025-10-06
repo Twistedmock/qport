@@ -232,16 +232,21 @@ fn configure_system(verbose: bool) -> io::Result<()> {
 }
 
 async fn resolve_host(host: &str) -> Vec<String> {
-    let mut ips = vec![];
-    match tokio::net::lookup_host((host, 0)).await {
+    // Fast path: if input is already an IP literal, use it directly
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return vec![ip.to_string()];
+    }
+
+    // DNS resolution path: use a non-zero port for better cross-platform behavior
+    let mut ips = Vec::new();
+    match tokio::net::lookup_host((host, 80)).await {
         Ok(addrs) => {
             for addr in addrs {
                 ips.push(addr.ip().to_string());
             }
         }
         Err(_) => {
-            // If not resolvable, assume it's an IP
-            ips.push(host.to_string());
+            // If not resolvable, return empty and let caller handle/report
         }
     }
     ips
